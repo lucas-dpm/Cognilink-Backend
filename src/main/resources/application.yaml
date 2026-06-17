@@ -1,0 +1,9 @@
+ktor:
+  deployment:
+    port: 8080
+  application:
+    modules:
+      - com.lucasdpm.cognilink.plugins.MonitoringKt.configureMonitoring
+      - com.lucasdpm.cognilink.plugins.SerializationKt.configureSerialization
+      - com.lucasdpm.cognilink.plugins.StatusPagesKt.configureStatusPages
+      - com.lucasdpm.cognilink.plugins.RoutingKt.configureRouting
