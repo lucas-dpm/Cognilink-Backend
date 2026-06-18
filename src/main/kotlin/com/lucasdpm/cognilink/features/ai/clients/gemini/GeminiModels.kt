@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class GeminiRequest(
     val contents: List<GeminiContent>,
-    val generationConfig: GeminiGenerationConfig? = null,
-    val safetySettings: List<GeminiSafetySetting>? = null
+    @SerialName("generation_config") val generationConfig: GeminiGenerationConfig? = null,
+    @SerialName("safety_settings") val safetySettings: List<GeminiSafetySetting>? = null
 )
 
 @Serializable
@@ -22,19 +22,19 @@ data class GeminiContent(val parts: List<GeminiPart> = emptyList())
 @Serializable
 data class GeminiPart(
     val text: String? = null,
-    val inlineData: GeminiInlineData? = null
+    @SerialName("inline_data") val inlineData: GeminiInlineData? = null
 )
 
 @Serializable
 data class GeminiInlineData(
-    val mimeType: String,
+    @SerialName("mime_type") val mimeType: String,
     val data: String
 )
 
 @Serializable
 data class GeminiGenerationConfig(
-    val responseMimeType: String? = null,
-    val responseSchema: GeminiResponseSchema? = null
+    @SerialName("response_mime_type") val responseMimeType: String? = null,
+    @SerialName("response_schema") val responseSchema: GeminiResponseSchema? = null
 )
 
 @Serializable
@@ -47,12 +47,12 @@ data class GeminiResponseSchema(
 @Serializable
 data class GeminiResponse(
     val candidates: List<GeminiCandidate> = emptyList(),
-    val promptFeedback: GeminiPromptFeedback? = null
+    @SerialName("prompt_feedback") val promptFeedback: GeminiPromptFeedback? = null
 )
 
 @Serializable
 data class GeminiPromptFeedback(
-    val safetyRatings: List<GeminiSafetyRating> = emptyList()
+    @SerialName("safety_ratings") val safetyRatings: List<GeminiSafetyRating> = emptyList()
 )
 
 @Serializable
@@ -64,6 +64,6 @@ data class GeminiSafetyRating(
 @Serializable
 data class GeminiCandidate(
     val content: GeminiContent? = null,
-    val finishReason: String? = null,
-    val safetyRatings: List<GeminiSafetyRating> = emptyList()
+    @SerialName("finish_reason") val finishReason: String? = null,
+    @SerialName("safety_ratings") val safetyRatings: List<GeminiSafetyRating> = emptyList()
 )

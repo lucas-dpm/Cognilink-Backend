@@ -44,7 +44,7 @@ class AiService {
     }
 
     private suspend fun <T> withRetry(
-        maxRetries: Int = 3,
+        maxRetries: Int = 2,
         initialDelayMillis: Long = 2000,
         maxDelayMillis: Long = 60000,
         block: suspend () -> T
@@ -78,7 +78,7 @@ class AiService {
     }
 
     suspend fun getAiCompletion(request: AiPromptRequest): AiResponse = withRetry {
-        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey"
         
         try {
             logger.info("Iniciando chat com Gemini para prompt: ${request.prompt.take(50)}...")
@@ -101,12 +101,13 @@ class AiService {
             AiResponse(result = text)
         } catch (e: Exception) {
             logger.error("Erro ao chamar Gemini: ${e.message}")
-            throw e // Repropaga para o withRetry
+            throw e
         }
     }
 
     suspend fun analyzeDocument(fileBytes: ByteArray, fileName: String): DocumentAnalysisResponse = withRetry {
-        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        // Usando v1 conforme sua recomendação e o modelo 1.5-flash original para arquivos
+        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey"
         
         val base64Data = Base64.getEncoder().encodeToString(fileBytes)
         val mimeType = when {
@@ -122,31 +123,27 @@ class AiService {
                 setBody(GeminiRequest(
                     contents = listOf(GeminiContent(
                         parts = listOf(
-                            GeminiPart(text = "Analise este documento e extraia os tópicos e subtópicos principais. Retorne apenas o JSON estruturado."),
+                            GeminiPart(text = """
+                                Você é um assistente especializado em análise de documentos.
+                                Analise o conteúdo fornecido e extraia a estrutura hierárquica.
+                                
+                                Analise este documento e extraia os tópicos e subtópicos principais. 
+                                
+                                REGRAS DE FORMATAÇÃO:
+                                1. Retorne APENAS o JSON puro, sem blocos de código Markdown (```json).
+                                2. NÃO use nenhuma formatação Markdown (como **, _, #, `) dentro dos valores (textos) do JSON.
+                                
+                                FORMATO DE RETORNO (JSON):
+                                {
+                                  "main-theme": "Título Geral do Documento",
+                                  "topics": [
+                                    { "title": "Nome do Tópico", "subtopics": ["Subtópico 1", "Subtópico 2"] }
+                                  ]
+                                }
+                            """.trimIndent()),
                             GeminiPart(inlineData = GeminiInlineData(mimeType, base64Data))
                         )
-                    )),
-                    generationConfig = GeminiGenerationConfig(
-                        responseMimeType = "application/json",
-                        responseSchema = GeminiResponseSchema(
-                            type = "object",
-                            properties = mapOf(
-                                "topics" to GeminiResponseSchema(
-                                    type = "array",
-                                    items = GeminiResponseSchema(
-                                        type = "object",
-                                        properties = mapOf(
-                                            "title" to GeminiResponseSchema(type = "string"),
-                                            "subtopics" to GeminiResponseSchema(
-                                                type = "array",
-                                                items = GeminiResponseSchema(type = "string")
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
+                    ))
                 ))
             }
 
@@ -163,7 +160,7 @@ class AiService {
                 json.decodeFromString<DocumentAnalysisResponse>(cleanJsonResponse(jsonResponse))
             } else {
                 logger.warn("Gemini retornou resposta vazia para $fileName")
-                DocumentAnalysisResponse(emptyList())
+                DocumentAnalysisResponse()
             }
         } catch (e: Exception) {
             logger.error("Erro na análise do documento $fileName: ${e.message}")
@@ -172,31 +169,34 @@ class AiService {
     }
 
     suspend fun generateFlashcards(request: GenerateFlashcardsRequest): FlashcardResponse = withRetry {
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey"
 
+        val topicsDescription = if (request.topics.isEmpty()) "o tema principal" else "os seguintes tópicos: ${request.topics.joinToString(", ")}"
         val prompt = """
-            Gere exatamente ${request.quantity} flashcards sobre os seguintes tópicos: ${request.topics.joinToString(", ")}.
+            Gere exatamente ${request.quantity} flashcards sobre $topicsDescription.
+            O contexto geral/tema principal é: "${request.mainTheme}".
             
             REGRAS DE CONTEÚDO:
-            1. Dificuldade: ${if (request.difficulty == "aleatorio") "Misture níveis fácil, médio e difícil" else request.difficulty}.
-            2. Tipo de Card: ${if (request.type == "aleatorio") "Misture tipos básico, múltipla escolha e verdadeiro/falso" else request.type}.
-            3. Idioma: Responda sempre em Português Brasileiro.
-            4. Distribuição: Divida a quantidade de cards entre os tópicos.
+            ${if (request.topics.isNotEmpty()) "- Foco: Gere cards baseados nos tópicos fornecidos, usando o tema principal como contexto." else ""}
+            - Dificuldade: ${if (request.difficulty == "RANDOM") "Misture níveis fácil, médio e difícil" else request.difficulty}.
+            - Tipo de Card: ${if (request.type == "RANDOM") "Misture tipos básico, múltipla escolha e verdadeiro/falso" else request.type}.
+            - Idioma e Adaptação: 
+               - O idioma principal deve ser Português Brasileiro.
+               - IMPORTANTE: Se o tema principal ("${request.mainTheme}") ou os tópicos indicarem o estudo de uma língua estrangeira (ex: Inglês, Espanhol), adapte o idioma dos cards para essa língua de forma pedagógica (ex: perguntas em Português e respostas na língua estrangeira, ou vice-versa).
+               - Mantenha conceitos técnicos ou termos sem tradução direta no idioma original.
+            - Distribuição: Divida a quantidade de cards de forma equilibrada entre os assuntos identificados.
             
-            REGRAS DE FORMATO (answerOptions):
-            - Para 'basico': A lista 'answerOptions' deve ter apenas 1 item (a resposta correta).
-            - Para 'verdadeiro_falso': A lista 'answerOptions' deve ter entre 2 e 10 itens (cada um sendo uma afirmação para marcar as corretas), marcando o 'isCorrect' corretamente.
-            - Para 'multipla_escolha': A lista 'answerOptions' deve ter entre 2 e 5 itens, with apenas 1 marcado como 'isCorrect: true'.
-            
-            IMPORTANTE: Retorne APENAS o JSON puro, sem blocos de código Markdown (```json).
+            REGRAS DE FORMATAÇÃO:
+            - Retorne APENAS o JSON puro, sem blocos de código Markdown (```json).
+            - NÃO use nenhuma formatação Markdown (como asteriscos para negrito ou sublinhados) dentro dos campos de texto (question, answerText, etc).
             
             FORMATO DE RETORNO (JSON):
             {
               "flashcards": [
                 {
                   "question": "texto",
-                  "type": "basico | multipla_escolha | verdadeiro_falso",
-                  "difficulty": "facil | medio | dificil",
+                  "type": "BASIC | MULTIPLE_CHOICE | TRUE_OR_FALSE",
+                  "difficulty": "EASY | MEDIUM | HARD",
                   "answerOptions": [
                     { "answerText": "texto", "isCorrect": true },
                     { "answerText": "texto", "isCorrect": false }
@@ -216,27 +216,75 @@ class AiService {
                 ))
             }
 
-            val responseBody = httpResponse.body<String>()
-            logger.info("Gemini HTTP Status: ${httpResponse.status}")
-            
             if (httpResponse.status != HttpStatusCode.OK) {
-                logger.error("Gemini API error: $responseBody")
-                throw Exception("Gemini API error (${httpResponse.status}): $responseBody")
+                val errorBody = httpResponse.body<String>()
+                throw Exception("Gemini API error (${httpResponse.status}): $errorBody")
             }
 
-            val response: GeminiResponse = json.decodeFromString(responseBody)
-
-            logger.info("Gemini candidates count: ${response.candidates.size}")
+            val response: GeminiResponse = httpResponse.body()
             val jsonResponse = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text
             if (jsonResponse != null) {
-                logger.info("Raw JSON response from Gemini: $jsonResponse")
                 json.decodeFromString<FlashcardResponse>(cleanJsonResponse(jsonResponse))
             } else {
-                logger.warn("Gemini returned no candidates or empty parts. Response: $response")
                 FlashcardResponse(emptyList())
             }
         } catch (e: Exception) {
             logger.error("Erro ao gerar flashcards: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun compareAnswer(request: CompareAnswerRequest): CompareAnswerResponse = withRetry {
+        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey"
+
+        val prompt = """
+            Você é um professor avaliando a resposta de um aluno para um flashcard.
+            Questão: ${request.question}
+            Resposta Esperada (Gabarito): ${request.correctAnswer}
+            Resposta do Usuário: ${request.userAnswer}
+
+            REGRAS DE AVALIAÇÃO:
+            1. Seja flexível: Se a resposta do usuário for semanticamente equivalente ao gabarito, considere correta (isCorrect: true).
+            2. Ignore erros menores: Não penalize por erros de digitação leves, falta de acentuação ou diferenças de maiúsculas/minúsculas.
+            3. Dica Pedagógica (tip):
+               - Se estiver correta: Reforce o conhecimento com uma curiosidade curta ou uma técnica de mnemônica (ex: acrônimos, rimas, associações visuais) para ajudar na memorização a longo prazo.
+               - Se estiver incorreta: Explique brevemente o porquê do erro de forma encorajadora e forneça a mnemônica para ajudar a não esquecer novamente.
+
+            REGRAS DE FORMATAÇÃO:
+            1. Retorne APENAS o JSON puro, sem blocos de código Markdown.
+            2. NÃO use NENHUMA formatação Markdown (como **negrito**, _itálico_, `código` ou # títulos) dentro das strings do JSON. O texto deve ser plano/puro.
+
+            FORMATO DE RETORNO (JSON):
+            {
+              "isCorrect": boolean,
+              "tip": "string"
+            }
+        """.trimIndent()
+
+        try {
+            logger.info("Comparando resposta para a questão: ${request.question.take(50)}...")
+
+            val httpResponse = client.post(url) {
+                contentType(ContentType.Application.Json)
+                setBody(GeminiRequest(
+                    contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = prompt)))),
+                ))
+            }
+
+            if (httpResponse.status != HttpStatusCode.OK) {
+                val errorBody = httpResponse.body<String>()
+                throw Exception("Gemini API error (${httpResponse.status}): $errorBody")
+            }
+
+            val response: GeminiResponse = httpResponse.body()
+            val jsonResponse = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (jsonResponse != null) {
+                json.decodeFromString<CompareAnswerResponse>(cleanJsonResponse(jsonResponse))
+            } else {
+                CompareAnswerResponse(false, "Não foi possível validar a resposta no momento.")
+            }
+        } catch (e: Exception) {
+            logger.error("Erro ao comparar resposta: ${e.message}")
             throw e
         }
     }

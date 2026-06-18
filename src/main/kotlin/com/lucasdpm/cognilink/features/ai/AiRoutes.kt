@@ -1,6 +1,7 @@
 package com.lucasdpm.cognilink.features.ai
 
 import com.lucasdpm.cognilink.features.ai.models.AiPromptRequest
+import com.lucasdpm.cognilink.features.ai.models.CompareAnswerRequest
 import com.lucasdpm.cognilink.features.ai.models.GenerateFlashcardsRequest
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -45,13 +46,27 @@ fun Route.aiRouting(aiService: AiService) {
 
         post("/generate-flashcards") {
             val request = call.receive<GenerateFlashcardsRequest>()
-            if (request.topics.isEmpty() || request.quantity <= 0) {
-                call.respond(HttpStatusCode.BadRequest, "Tópicos ou quantidade inválidos")
+            if (request.mainTheme.isEmpty() && request.topics.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, "Forneça ao menos um tema principal ou tópicos para a geração")
+                return@post
+            }
+            if (request.quantity <= 0) {
+                call.respond(HttpStatusCode.BadRequest, "Quantidade de cards deve ser maior que zero")
                 return@post
             }
 
             val response = aiService.generateFlashcards(request)
             call.respond(response)
+        }
+
+        post("/compare-answer") {
+            try {
+                val request = call.receive<CompareAnswerRequest>()
+                val response = aiService.compareAnswer(request)
+                call.respond(response)
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "Erro ao processar validação de resposta: ${e.message}")
+            }
         }
     }
 }

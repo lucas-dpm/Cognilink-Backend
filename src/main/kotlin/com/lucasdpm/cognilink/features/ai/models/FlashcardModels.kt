@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GenerateFlashcardsRequest(
+    val mainTheme: String = "",
     val topics: List<String>,
     val difficulty: String, // "facil", "medio", "dificil", "aleatorio"
     val type: String,       // "basico", "multipla_escolha", "verdadeiro_falso", "aleatorio"
@@ -27,4 +28,17 @@ data class Flashcard(
 data class AnswerOption(
     val answerText: String,
     val isCorrect: Boolean
+)
+
+@Serializable
+data class CompareAnswerRequest(
+    val question: String,
+    val correctAnswer: String,
+    val userAnswer: String
+)
+
+@Serializable
+data class CompareAnswerResponse(
+    val isCorrect: Boolean,
+    val tip: String
 )
