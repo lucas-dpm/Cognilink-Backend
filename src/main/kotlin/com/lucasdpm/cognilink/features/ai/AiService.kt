@@ -124,21 +124,24 @@ class AiService {
                     contents = listOf(GeminiContent(
                         parts = listOf(
                             GeminiPart(text = """
-                                Você é um assistente especializado em análise de documentos.
-                                Analise o conteúdo fornecido e extraia a estrutura hierárquica.
-                                
-                                Analise este documento e extraia os tópicos e subtópicos principais. 
-                                
+                                Você é um assistente especializado em análise profunda de documentos acadêmicos e técnicos.
+                                Seu objetivo é realizar uma leitura exaustiva do documento fornecido e extrair uma estrutura detalhada de tópicos.
+
+                                INSTRUÇÕES DE ANÁLISE:
+                                1. Identifique o tema central (main-theme).
+                                2. Extraia TODOS os conceitos, definições, metodologias e pontos-chave discutidos no documento.
+                                3. Não se limite apenas aos títulos; procure por conceitos importantes dentro do conteúdo.
+                                4. Retorne uma lista abrangente de tópicos (busque extrair o máximo de tópicos relevantes possível).
+                                5. Mantenha a lista como um array de strings simples.
+
                                 REGRAS DE FORMATAÇÃO:
                                 1. Retorne APENAS o JSON puro, sem blocos de código Markdown (```json).
-                                2. NÃO use nenhuma formatação Markdown (como **, _, #, `) dentro dos valores (textos) do JSON.
+                                2. NÃO use formatação Markdown (**, _, #, `) dentro dos valores do JSON.
                                 
                                 FORMATO DE RETORNO (JSON):
                                 {
-                                  "main-theme": "Título Geral do Documento",
-                                  "topics": [
-                                    { "title": "Nome do Tópico", "subtopics": ["Subtópico 1", "Subtópico 2"] }
-                                  ]
+                                  "main-theme": "Título Detalhado do Documento",
+                                  "topics": ["Tópico Detalhado 1", "Conceito 2", "Definição 3", "..."]
                                 }
                             """.trimIndent()),
                             GeminiPart(inlineData = GeminiInlineData(mimeType, base64Data))
@@ -185,6 +188,11 @@ class AiService {
                - IMPORTANTE: Se o tema principal ("${request.mainTheme}") ou os tópicos indicarem o estudo de uma língua estrangeira (ex: Inglês, Espanhol), adapte o idioma dos cards para essa língua de forma pedagógica (ex: perguntas em Português e respostas na língua estrangeira, ou vice-versa).
                - Mantenha conceitos técnicos ou termos sem tradução direta no idioma original.
             - Distribuição: Divida a quantidade de cards de forma equilibrada entre os assuntos identificados.
+            - Dicas Progressivas (hints): Para cada flashcard, gere EXATAMENTE 3 dicas que ajudem o usuário a lembrar a resposta:
+               - Dica 1: Orientação conceitual geral (sem revelar a resposta).
+               - Dica 2: Direcionamento mais específico sobre o termo ou conceito.
+               - Dica 3: Quase uma revelação da resposta, sendo muito direta.
+               - Tom: Mantenha um tom sempre encorajador e educativo.
             
             REGRAS DE FORMATAÇÃO:
             - Retorne APENAS o JSON puro, sem blocos de código Markdown (```json).
@@ -197,6 +205,11 @@ class AiService {
                   "question": "texto",
                   "type": "BASIC | MULTIPLE_CHOICE | TRUE_OR_FALSE",
                   "difficulty": "EASY | MEDIUM | HARD",
+                  "hints": [
+                    "Dica 1: Orientação conceitual geral (sem revelar resposta)",
+                    "Dica 2: Direcionamento mais específico",
+                    "Dica 3: Quase revelação da resposta"
+                  ],
                   "answerOptions": [
                     { "answerText": "texto", "isCorrect": true },
                     { "answerText": "texto", "isCorrect": false }

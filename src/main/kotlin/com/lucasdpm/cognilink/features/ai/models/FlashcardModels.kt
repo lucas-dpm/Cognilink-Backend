@@ -21,6 +21,7 @@ data class Flashcard(
     val question: String,
     val type: String,
     val difficulty: String,
+    val hints: List<String>,
     val answerOptions: List<AnswerOption>
 )
 

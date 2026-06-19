@@ -20,13 +20,20 @@ fun Route.aiRouting(aiService: AiService) {
         }
 
         post("/analyze-document") {
+            val contentType = call.request.contentType()
+            
+            if (!contentType.match(ContentType.MultiPart.FormData)) {
+                call.respond(HttpStatusCode.UnsupportedMediaType, "A requisição deve ser multipart/form-data")
+                return@post
+            }
+
             val multipart = call.receiveMultipart()
+
             var fileBytes: ByteArray? = null
             var fileName: String? = null
 
             multipart.forEachPart { part ->
                 if (part is PartData.FileItem) {
-                    // Ktor 3: Usando provider() com readRemaining() para obter os bytes
                     fileBytes = part.provider().readRemaining().readByteArray()
                     fileName = part.originalFileName
                 }
