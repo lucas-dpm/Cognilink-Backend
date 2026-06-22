@@ -206,9 +206,9 @@ class AiService {
                   "type": "BASIC | MULTIPLE_CHOICE | TRUE_OR_FALSE",
                   "difficulty": "EASY | MEDIUM | HARD",
                   "hints": [
-                    "Dica 1: Orientação conceitual geral (sem revelar resposta)",
-                    "Dica 2: Direcionamento mais específico",
-                    "Dica 3: Quase revelação da resposta"
+                    "Orientação conceitual geral (sem revelar a resposta)...",
+                    "Direcionamento mais específico sobre o termo ou conceito...",
+                    "Quase uma revelação da resposta, sendo muito direta..."
                   ],
                   "answerOptions": [
                     { "answerText": "texto", "isCorrect": true },
