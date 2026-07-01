@@ -28,6 +28,7 @@ dependencies {
     implementation(ktorLibs.client.core)
     implementation(ktorLibs.client.cio)
     implementation(ktorLibs.client.contentNegotiation)
+    implementation(libs.jedis)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)

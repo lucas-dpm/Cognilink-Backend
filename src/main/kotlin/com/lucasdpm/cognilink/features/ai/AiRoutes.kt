@@ -1,8 +1,6 @@
 package com.lucasdpm.cognilink.features.ai
 
-import com.lucasdpm.cognilink.features.ai.models.AiPromptRequest
-import com.lucasdpm.cognilink.features.ai.models.CompareAnswerRequest
-import com.lucasdpm.cognilink.features.ai.models.GenerateFlashcardsRequest
+import com.lucasdpm.cognilink.features.ai.models.*
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.request.*
@@ -73,6 +71,28 @@ fun Route.aiRouting(aiService: AiService) {
                 call.respond(response)
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.BadRequest, "Erro ao processar validação de resposta: ${e.message}")
+            }
+        }
+
+        route("/feynman") {
+            post("/start") {
+                try {
+                    val request = call.receive<FeynmanStartRequest>()
+                    val response = aiService.startFeynmanChat(request)
+                    call.respond(response)
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, "Erro ao iniciar chat de Feynman: ${e.message}")
+                }
+            }
+
+            post("/message") {
+                try {
+                    val request = call.receive<FeynmanMessageRequest>()
+                    val response = aiService.processFeynmanMessage(request)
+                    call.respond(response)
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, "Erro ao processar mensagem de Feynman: ${e.message}")
+                }
             }
         }
     }

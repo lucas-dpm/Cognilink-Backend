@@ -2,6 +2,7 @@ package com.lucasdpm.cognilink.features.ai
 
 import com.lucasdpm.cognilink.features.ai.clients.gemini.*
 import com.lucasdpm.cognilink.features.ai.models.*
+import com.lucasdpm.cognilink.plugins.RedisConfig
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -33,6 +34,30 @@ class AiService {
             socketTimeoutMillis = 60000
         }
     }
+
+    private val personas = listOf(
+        FeynmanPersona(
+            "Criança de 5 anos",
+            "Você é uma criança curiosa de 5 anos que não sabe nada sobre o assunto. Você faz perguntas simples e quer analogias com brinquedos ou coisas do dia a dia.",
+            "Oi! Eu sou o Leo. Minha professora falou sobre isso, mas eu não entendi nada. Você pode me explicar o que é %s como se eu tivesse 5 anos?"
+        ),
+        FeynmanPersona(
+            "Avó Gentil",
+            "Você é uma avó muito gentil e paciente, mas que não entende nada de tecnologia ou conceitos modernos. Você gosta de histórias e comparações com a vida no campo ou culinária.",
+            "Olá, querido(a)! Eu estava lendo sobre esse tal de %s, mas minha cabeça ficou toda confusa. Você teria paciência de explicar para essa velhinha o que é isso?"
+        ),
+        FeynmanPersona(
+            "Amigo Leigo",
+            "Você é um amigo inteligente, mas que trabalha em uma área completamente diferente e nunca ouviu falar desse tema. Você é cético e quer entender a utilidade prática.",
+            "E aí! Cara, vi você estudando %s e fiquei curioso. O que é isso afinal? Tenta me explicar sem usar termos muito técnicos, por favor."
+        )
+    )
+
+    private data class FeynmanPersona(
+        val name: String,
+        val description: String,
+        val initialMessageTemplate: String
+    )
 
     private val apiKey: String by lazy {
         val properties = Properties()
@@ -298,6 +323,121 @@ class AiService {
             }
         } catch (e: Exception) {
             logger.error("Erro ao comparar resposta: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun startFeynmanChat(request: FeynmanStartRequest): FeynmanChatResponse {
+        val sessionId = request.sessionId ?: UUID.randomUUID().toString()
+        val persona = personas.random()
+        val initialMessage = persona.initialMessageTemplate.format(request.theme)
+        
+        val initialState = listOf(FeynmanChatMessage("model", initialMessage))
+        
+        RedisConfig.pool.resource.use { jedis ->
+            val key = RedisConfig.getSessionKey(sessionId)
+            jedis.set(key, json.encodeToString(initialState))
+            jedis.expire(key, 1800) // 30 minutos
+        }
+        
+        return FeynmanChatResponse(
+            reply = initialMessage,
+            isFinished = false,
+            personaName = persona.name
+        )
+    }
+
+    suspend fun processFeynmanMessage(request: FeynmanMessageRequest): FeynmanChatResponse = withRetry {
+        val url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey"
+        
+        val key = RedisConfig.getSessionKey(request.sessionId)
+        val historyJson = RedisConfig.pool.resource.use { it.get(key) }
+            ?: throw Exception("Sessão não encontrada ou expirada.")
+            
+        val history = json.decodeFromString<List<FeynmanChatMessage>>(historyJson)
+
+        val systemPrompt = """
+            Você está em uma sessão de "Técnica de Feynman". 
+            O usuário está tentando te explicar um conceito para verificar se ele realmente entendeu.
+            
+            SUA PERSONA: 
+            ${history.firstOrNull { it.role == "model" }?.content?.let { firstMsg ->
+                personas.find { it.initialMessageTemplate.substringBefore("%s") in firstMsg }?.description 
+            } ?: "Você é um aprendiz curioso que não conhece o assunto."}
+            
+            REGRAS DE INTERAÇÃO:
+            1. Atue estritamente como sua persona.
+            2. Se a explicação do usuário for confusa, faça perguntas clarificadoras simples.
+            3. Se ele usar termos técnicos (jargões), peça para ele explicar esses termos de forma simples.
+            4. Se ele der uma ótima explicação com analogias, elogie e finalize a sessão.
+            
+            REGRAS DE FINALIZAÇÃO:
+            - Quando você sentir que o usuário explicou o conceito de forma clara, simples e sem buracos no conhecimento, você deve finalizar a sessão.
+            - Na última resposta, defina 'isFinished' como true e atribua uma nota de qualidade SM2 (0 a 5) baseada na clareza da explicação.
+            
+            REGRAS DE FORMATAÇÃO:
+            1. Retorne APENAS o JSON puro, sem blocos de código Markdown.
+            2. NÃO use formatação Markdown dentro das strings do JSON.
+
+            FORMATO DE RETORNO (JSON):
+            {
+              "reply": "sua resposta aqui",
+              "isFinished": boolean,
+              "sm2Quality": number (0-5, preencher apenas se isFinished for true)
+            }
+        """.trimIndent()
+
+        val geminiHistory = history.map {
+            GeminiContent(
+                role = it.role,
+                parts = listOf(GeminiPart(text = it.content))
+            )
+        } + GeminiContent(
+            role = "user",
+            parts = listOf(GeminiPart(text = request.message))
+        )
+
+        try {
+            logger.info("Processando mensagem de Feynman para sessão: ${request.sessionId}")
+
+            val httpResponse = client.post(url) {
+                contentType(ContentType.Application.Json)
+                setBody(GeminiRequest(
+                    contents = geminiHistory,
+                    systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt)))
+                ))
+            }
+
+            if (httpResponse.status != HttpStatusCode.OK) {
+                val errorBody = httpResponse.body<String>()
+                throw Exception("Gemini API error (${httpResponse.status}): $errorBody")
+            }
+
+            val response: GeminiResponse = httpResponse.body()
+            val geminiText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            
+            if (geminiText != null) {
+                val feynmanResponse = json.decodeFromString<FeynmanChatResponse>(cleanJsonResponse(geminiText))
+                
+                if (feynmanResponse.isFinished) {
+                    RedisConfig.pool.resource.use { it.del(key) }
+                } else {
+                    val updatedHistory = history + 
+                        FeynmanChatMessage("user", request.message) + 
+                        FeynmanChatMessage("model", feynmanResponse.reply)
+                    
+                    RedisConfig.pool.resource.use { jedis ->
+                        jedis.set(key, json.encodeToString(updatedHistory))
+                        jedis.expire(key, 1800)
+                    }
+                }
+                
+                feynmanResponse
+            } else {
+                FeynmanChatResponse("Desculpe, não consegui processar sua explicação agora.", false)
+            }
+        } catch (e: Exception) {
+            logger.error("Erro no chat de Feynman: ${e.message}")
             throw e
         }
     }
