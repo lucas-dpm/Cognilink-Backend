@@ -94,6 +94,25 @@ fun Route.aiRouting(aiService: AiService) {
                     call.respond(HttpStatusCode.BadRequest, "Erro ao processar mensagem de Feynman: ${e.message}")
                 }
             }
+
+            delete("/close/{sessionId}") {
+                val sessionId = call.parameters["sessionId"]
+                if (sessionId == null) {
+                    call.respond(HttpStatusCode.BadRequest, "Session ID é obrigatório")
+                    return@delete
+                }
+                
+                try {
+                    aiService.closeFeynmanChat(sessionId)
+                    call.respond(HttpStatusCode.OK, "Sessão encerrada com sucesso")
+                } catch (e: Exception) {
+                    if (e.message?.contains("404") == true) {
+                        call.respond(HttpStatusCode.NotFound, e.message ?: "Sessão não encontrada")
+                    } else {
+                        call.respond(HttpStatusCode.InternalServerError, "Erro ao encerrar sessão: ${e.message}")
+                    }
+                }
+            }
         }
     }
 }

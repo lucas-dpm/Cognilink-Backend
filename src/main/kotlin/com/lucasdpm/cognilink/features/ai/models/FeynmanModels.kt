@@ -28,3 +28,10 @@ data class FeynmanChatResponse(
     val sm2Quality: Int? = null,
     val personaName: String? = null
 )
+
+@Serializable
+data class FeynmanStartResponse(
+    val sessionId: String,
+    val initialMessage: String,
+    val personaName: String? = null
+)

@@ -327,7 +327,7 @@ class AiService {
         }
     }
 
-    suspend fun startFeynmanChat(request: FeynmanStartRequest): FeynmanChatResponse {
+    fun startFeynmanChat(request: FeynmanStartRequest): FeynmanStartResponse {
         val sessionId = request.sessionId ?: UUID.randomUUID().toString()
         val persona = personas.random()
         val initialMessage = persona.initialMessageTemplate.format(request.theme)
@@ -340,9 +340,9 @@ class AiService {
             jedis.expire(key, 1800) // 30 minutos
         }
         
-        return FeynmanChatResponse(
-            reply = initialMessage,
-            isFinished = false,
+        return FeynmanStartResponse(
+            sessionId = sessionId,
+            initialMessage = initialMessage,
             personaName = persona.name
         )
     }
@@ -387,7 +387,12 @@ class AiService {
             }
         """.trimIndent()
 
-        val geminiHistory = history.map {
+        val geminiHistory = listOf(
+            GeminiContent(
+                role = "user",
+                parts = listOf(GeminiPart(text = "INSTRUÇÕES DE SISTEMA: $systemPrompt"))
+            )
+        ) + history.map {
             GeminiContent(
                 role = it.role,
                 parts = listOf(GeminiPart(text = it.content))
@@ -403,8 +408,7 @@ class AiService {
             val httpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)
                 setBody(GeminiRequest(
-                    contents = geminiHistory,
-                    systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt)))
+                    contents = geminiHistory
                 ))
             }
 
@@ -420,6 +424,7 @@ class AiService {
                 val feynmanResponse = json.decodeFromString<FeynmanChatResponse>(cleanJsonResponse(geminiText))
                 
                 if (feynmanResponse.isFinished) {
+                    logger.info("Sessão de Feynman finalizada: ${request.sessionId}. Qualidade SM2: ${feynmanResponse.sm2Quality}")
                     RedisConfig.pool.resource.use { it.del(key) }
                 } else {
                     val updatedHistory = history + 
@@ -438,6 +443,24 @@ class AiService {
             }
         } catch (e: Exception) {
             logger.error("Erro no chat de Feynman: ${e.message}")
+            throw e
+        }
+    }
+
+    fun closeFeynmanChat(sessionId: String) {
+        val key = RedisConfig.getSessionKey(sessionId)
+        try {
+            logger.info("Encerrando sessão de Feynman: $sessionId")
+            RedisConfig.pool.resource.use { jedis ->
+                if (jedis.exists(key)) {
+                    jedis.del(key)
+                    logger.info("Sessão $sessionId removida do Redis.")
+                } else {
+                    logger.warn("Tentativa de encerrar sessão $sessionId que não existe ou já expirou.")
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Erro ao encerrar sessão de Feynman $sessionId: ${e.message}")
             throw e
         }
     }
